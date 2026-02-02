@@ -1,17 +1,610 @@
-<!doctype html>
-<html lang="en">
-
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title id="dynamic-title">SKP</title>
-  <link rel="icon" id="dynamic-favicon" type="image/svg+xml" href="/vite.svg" />
-  <script type="module" crossorigin src="/assets/index-CE5-spm6.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DOn0gxxS.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>随机地址空投面板（自定义金额范围+5位小数）</title>
+    <!-- Bootstrap 样式 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Ethers.js -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <style>
+        /* 通用样式（与原有面板保持一致） */
+        body {
+            background-color: #f5f7fa;
+            padding-bottom: 50px;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .header-bar {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        .contract-card {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+        .contract-card h4 {
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-label {
+            font-weight: 600;
+            color: #34495e;
+        }
+        .btn-custom {
+            background-color: #3498db;
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .btn-custom:hover {
+            background-color: #2980b9;
+            color: #fff;
+        }
+        .btn-custom:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .btn-read {
+            background-color: #2ecc71;
+            color: #fff;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            margin-left: 10px;
+            transition: all 0.3s;
+        }
+        .btn-read:hover {
+            background-color: #27ae60;
+            color: #fff;
+        }
+        .btn-unlock {
+            font-size: 0.8em;
+            color: #999;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+        .btn-unlock:hover {
+            color: #3498db;
+        }
+        /* 状态提示 */
+        .status {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            display: none;
+        }
+        .status.loading {
+            display: block;
+            background-color: #f8f9fa;
+            color: #0d6efd;
+        }
+        .status.success {
+            display: block;
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            display: block;
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        /* 折叠面板 */
+        .collapse-btn {
+            background: none;
+            border: none;
+            color: #3498db;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        .collapse-content {
+            margin-top: 15px;
+        }
+        /* 地址/数值校验 */
+        .is-invalid {
+            border-color: #dc3545 !important;
+        }
+        .invalid-feedback {
+            display: block;
+            color: #dc3545;
+            font-size: 0.85em;
+            margin-top: 5px;
+        }
+        /* 只读样式 */
+        .addr-input[readonly], .form-control[readonly] {
+            background-color: #f8f9fa;
+            cursor: not-allowed;
+        }
+        /* 开关样式优化 */
+        .form-switch {
+            padding-left: 2.5rem;
+        }
+    </style>
 </head>
-
 <body>
-  <div id="root"></div>
-</body>
+    <div class="container mt-5">
+        <!-- 头部：钱包连接 + 合约地址配置 -->
+        <div class="header-bar">
+            <div class="row align-items-center">
+                <div class="col-md-4 mb-3 mb-md-0">
+                    <h3>随机地址空投管理面板</h3>
+                </div>
+                <div class="col-md-8">
+                    <!-- 钱包连接 -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <button id="connectWallet" class="btn-custom w-100">连接钱包</button>
+                            <div id="walletStatus" class="mt-2 text-muted">未连接钱包</div>
+                        </div>
+                        <div class="col-md-6">
+                            <select id="chainSelector" class="form-control">
+                                <option value="56">BSC 主网 (56)</option>
+                                <option value="97">BSC 测试网 (97)</option>
+                                <option value="1">以太坊主网 (1)</option>
+                                <option value="5">以太坊测试网 Goerli (5)</option>
+                            </select>
+                        </div>
+                    </div>
 
+                    <!-- 合约地址配置（预先填充你的合约地址） -->
+                    <div class="row">
+                        <div class="col-md-5 mb-2 mb-md-0">
+                            <label class="form-label">空投合约地址
+                                <span class="btn-unlock" onclick="unlockInput('airdropContractAddr')">🔓 解锁</span>
+                            </label>
+                            <input type="text" id="airdropContractAddr" class="form-control addr-input" 
+                                value="0xc6D48C72113974785Bfe06182C421CCF8a0EA3d0" readonly placeholder="0x...">
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label">Token 合约地址
+                                <span class="btn-unlock" onclick="unlockInput('tokenContractAddr')">🔓 解锁</span>
+                            </label>
+                            <input type="text" id="tokenContractAddr" class="form-control addr-input" 
+                                value="0xf2aa7906b5b4bda32240453bf052e8cf50be9221" readonly placeholder="0x...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 功能1：向空投合约转账Token（空投前置准备） -->
+        <div class="contract-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4>步骤1：向空投合约转入Token</h4>
+                <button class="collapse-btn" onclick="toggleCollapse('tokenTransferCollapse')">收起 ▲</button>
+            </div>
+            <div id="tokenTransferCollapse" class="collapse-content">
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="row align-items-end">
+                            <div class="col-md-6">
+                                <label class="form-label">转账Token数量（不含小数，自动适配18位小数，对应合约的X.00000）</label>
+                                <input type="number" id="transferTokenAmount" class="form-control" placeholder="请输入要转入的Token数量" min="1" step="1">
+                            </div>
+                            <div class="col-md-3">
+                                <button onclick="transferTokenToAirdropContract()" class="btn-custom w-100">执行转账</button>
+                            </div>
+                            <div class="col-md-3">
+                                <button onclick="readAirdropContractTokenBalance()" class="btn-read w-100">查询空投合约余额</button>
+                            </div>
+                        </div>
+                        <div id="tokenTransferStatusMsg" class="status"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 功能2：执行批量随机空投（核心功能，适配三参数） -->
+        <div class="contract-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4>步骤2：执行批量随机空投（自定义金额范围）</h4>
+                <button class="collapse-btn" onclick="toggleCollapse('batchAirdropCollapse')">收起 ▲</button>
+            </div>
+            <div id="batchAirdropCollapse" class="collapse-content">
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            <strong>提示：</strong>
+                            1.  金额下限/上限为基准值（如1=1.00000，10=10.00000），支持5位小数随机生成（如1.43921）。<br>
+                            2.  空投次数不能超过「合约余额 ÷ 金额下限」，每个地址至少空投下限对应的Token数量。<br>
+                            3.  生成的地址为无主黑洞地址，Token转入后无法提取！
+                        </div>
+                        <div class="row align-items-end mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">金额下限（基准值，≥1）</label>
+                                <input type="number" id="airdropMinAmount" class="form-control" placeholder="如1（对应1.00000）" min="1" step="1">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">金额上限（基准值，≥下限）</label>
+                                <input type="number" id="airdropMaxAmount" class="form-control" placeholder="如10（对应10.00000）" min="1" step="1">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">空投次数（生成随机地址数量）</label>
+                                <input type="number" id="airdropCount" class="form-control" placeholder="如100" min="1" step="1">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-12">
+                                <button onclick="executeBatchRandomAirdrop()" class="btn-custom w-100">执行批量空投</button>
+                            </div>
+                        </div>
+                        <div id="batchAirdropStatusMsg" class="status"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 核心交互脚本 -->
+    <script>
+        // 全局变量
+        let provider, signer, walletAddress;
+
+        // ========== 合约ABI定义（更新空投函数为三参数） ==========
+        // 1. 空投合约ABI（核心功能，适配三参数executeBatchRandomAirdrop）
+        const airdropContractABI = [
+            "function executeBatchRandomAirdrop(uint256 _minAmount, uint256 _maxAmount, uint256 _airdropCount) external",
+            "function getContractTokenBalance() external view returns (uint256)",
+            "function tokenContract() external view returns (address)",
+            "function formatFiveDecimals(uint256 _amountFiveDec) external pure returns (string memory)"
+        ];
+
+        // 2. ERC20 Token合约ABI（转账+小数位查询）
+        const erc20TokenABI = [
+            "function transfer(address to, uint256 amount) external returns (bool)",
+            "function decimals() external view returns (uint8)",
+            "function balanceOf(address account) external view returns (uint256)"
+        ];
+
+        // ========== 钱包连接逻辑（与原有面板保持一致） ==========
+        window.addEventListener('DOMContentLoaded', async () => {
+            if (window.ethereum) {
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                    if (accounts.length > 0) {
+                        initWallet(accounts[0]);
+                    }
+                } catch (err) {
+                    console.log('检查钱包状态失败:', err);
+                }
+
+                window.ethereum.on('accountsChanged', (accounts) => {
+                    if (accounts.length > 0) {
+                        initWallet(accounts[0]);
+                    } else {
+                        resetWalletStatus();
+                    }
+                });
+
+                window.ethereum.on('chainChanged', (chainId) => {
+                    window.location.reload();
+                });
+            }
+        });
+
+        async function initWallet(addr) {
+            walletAddress = addr;
+            provider = new ethers.providers.Web3Provider(window.ethereum, 'any');
+            await provider.send('eth_requestAccounts', []);
+            signer = provider.getSigner();
+            
+            document.getElementById('walletStatus').textContent = `已连接: ${walletAddress.substring(0, 6)}...${walletAddress.substring(38)}`;
+            document.getElementById('walletStatus').style.color = '#198754';
+            document.getElementById('connectWallet').textContent = '切换钱包';
+
+            // 连接钱包后自动查询一次空投合约余额
+            setTimeout(() => readAirdropContractTokenBalance(), 1000);
+        }
+
+        function resetWalletStatus() {
+            walletAddress = null;
+            provider = null;
+            signer = null;
+            document.getElementById('walletStatus').textContent = '未连接钱包';
+            document.getElementById('walletStatus').style.color = '#6c757d';
+            document.getElementById('connectWallet').textContent = '连接钱包';
+        }
+
+        document.getElementById('connectWallet').addEventListener('click', async () => {
+            if (!window.ethereum) {
+                alert('请安装MetaMask钱包（或其他EVM兼容钱包）！');
+                return;
+            }
+
+            try {
+                const accounts = await window.ethereum.request({ 
+                    method: 'eth_requestAccounts'
+                });
+
+                if (accounts.length === 0) {
+                    throw new Error('未授权任何账户');
+                }
+
+                initWallet(accounts[0]);
+            } catch (error) {
+                document.getElementById('walletStatus').textContent = `连接失败: ${error.message}`;
+                document.getElementById('walletStatus').style.color = '#dc3545';
+                console.error('钱包连接错误:', error);
+            }
+        });
+
+        // 切换链逻辑
+        document.getElementById('chainSelector').addEventListener('change', async (e) => {
+            if (!window.ethereum) {
+                alert('请安装MetaMask钱包！');
+                return;
+            }
+
+            const chainId = e.target.value;
+            const hexChainId = ethers.utils.hexValue(parseInt(chainId));
+
+            try {
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: hexChainId }],
+                });
+            } catch (switchError) {
+                if (switchError.code === 4902) {
+                    alert(`当前钱包未添加该链，请手动添加链ID ${chainId} 后重试！`);
+                } else {
+                    alert(`切换链失败: ${switchError.message}`);
+                }
+            }
+        });
+
+        // 解锁/锁定输入框
+        function unlockInput(id) {
+            const input = document.getElementById(id);
+            if (input.readOnly) {
+                input.readOnly = false;
+                input.style.backgroundColor = '#fff';
+                input.style.cursor = 'text';
+                const unlockBtn = input.parentElement.querySelector('.btn-unlock');
+                unlockBtn.textContent = '🔒 锁定';
+                unlockBtn.onclick = () => lockInput(id);
+            }
+        }
+
+        function lockInput(id) {
+            const input = document.getElementById(id);
+            input.readOnly = true;
+            input.style.backgroundColor = '#f8f9fa';
+            input.style.cursor = 'not-allowed';
+            const unlockBtn = input.parentElement.querySelector('.btn-unlock');
+            unlockBtn.textContent = '🔓 解锁';
+            unlockBtn.onclick = () => unlockInput(id);
+        }
+
+        // 折叠/展开面板
+        function toggleCollapse(id) {
+            const content = document.getElementById(id);
+            const btn = content.parentElement.querySelector('.collapse-btn');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                btn.textContent = '收起 ▲';
+            } else {
+                content.style.display = 'none';
+                btn.textContent = '展开 ▼';
+            }
+        }
+
+        // ========== 功能1：向空投合约转账Token（保持不变） ==========
+        async function transferTokenToAirdropContract() {
+            if (!provider || !signer) return alert('请先连接钱包！');
+            
+            // 获取输入参数
+            const airdropContractAddr = document.getElementById('airdropContractAddr').value;
+            const tokenContractAddr = document.getElementById('tokenContractAddr').value;
+            const transferAmount = document.getElementById('transferTokenAmount').value;
+            const statusEl = document.getElementById('tokenTransferStatusMsg');
+
+            // 前置校验
+            try {
+                if (!ethers.utils.isAddress(airdropContractAddr)) throw new Error('空投合约地址无效');
+                if (!ethers.utils.isAddress(tokenContractAddr)) throw new Error('Token合约地址无效');
+                if (!transferAmount || transferAmount < 1) throw new Error('请输入大于0的转账数量');
+            } catch (error) {
+                statusEl.className = 'status error';
+                statusEl.textContent = `参数错误: ${error.message}`;
+                return;
+            }
+
+            // 初始化合约实例
+            const tokenContract = new ethers.Contract(tokenContractAddr, erc20TokenABI, signer);
+
+            try {
+                // 1. 获取Token小数位（默认18位，兼容自定义小数位Token）
+                statusEl.className = 'status loading';
+                statusEl.textContent = '正在获取Token小数位...';
+                const decimals = await tokenContract.decimals();
+                
+                // 2. 转换数量为wei单位（ERC20转账最小单位）
+                const transferAmountWei = ethers.utils.parseUnits(transferAmount, decimals);
+                
+                // 3. 执行转账交易
+                statusEl.textContent = '交易处理中，请等待钱包确认并上链...';
+                const tx = await tokenContract.transfer(airdropContractAddr, transferAmountWei);
+                
+                // 4. 等待交易上链
+                await tx.wait();
+                
+                // 5. 更新成功状态
+                statusEl.className = 'status success';
+                statusEl.textContent = `转账成功！交易哈希: ${tx.hash.substring(0, 10)}...${tx.hash.substring(tx.hash.length - 6)}`;
+                
+                // 6. 转账成功后自动查询空投合约余额
+                setTimeout(() => readAirdropContractTokenBalance(), 1500);
+            } catch (error) {
+                // 简化错误提示
+                let errorMsg = error.message;
+                if (errorMsg.includes('insufficient funds')) {
+                    errorMsg = '执行失败：你的钱包Token余额不足';
+                } else if (errorMsg.includes('user rejected')) {
+                    errorMsg = '执行失败：你已拒绝钱包交易请求';
+                } else if (errorMsg.length > 100) {
+                    errorMsg = errorMsg.substring(0, 100) + '...';
+                }
+                
+                statusEl.className = 'status error';
+                statusEl.textContent = `转账失败: ${errorMsg}`;
+                console.error('转账Token错误:', error);
+            }
+        }
+
+        // ========== 功能2：查询空投合约Token余额（保持不变） ==========
+        async function readAirdropContractTokenBalance() {
+            if (!provider) return alert('请先连接钱包！');
+            
+            // 获取输入参数
+            const airdropContractAddr = document.getElementById('airdropContractAddr').value;
+            const tokenContractAddr = document.getElementById('tokenContractAddr').value;
+            const statusEl = document.getElementById('tokenTransferStatusMsg');
+
+            // 前置校验
+            try {
+                if (!ethers.utils.isAddress(airdropContractAddr)) throw new Error('空投合约地址无效');
+                if (!ethers.utils.isAddress(tokenContractAddr)) throw new Error('Token合约地址无效');
+            } catch (error) {
+                statusEl.className = 'status error';
+                statusEl.textContent = `参数错误: ${error.message}`;
+                return;
+            }
+
+            // 初始化合约实例
+            const airdropContract = new ethers.Contract(airdropContractAddr, airdropContractABI, provider);
+            const tokenContract = new ethers.Contract(tokenContractAddr, erc20TokenABI, provider);
+
+            try {
+                // 1. 获取余额（wei单位）
+                statusEl.className = 'status loading';
+                statusEl.textContent = '正在查询空投合约Token余额...';
+                const balanceWei = await airdropContract.getContractTokenBalance();
+                const decimals = await tokenContract.decimals();
+                
+                // 2. 转换为可读格式（去除小数位，便于用户理解）
+                const balanceReadable = ethers.utils.formatUnits(balanceWei, decimals);
+                const balanceInteger = Math.floor(Number(balanceReadable));
+                
+                // 3. 更新成功状态
+                statusEl.className = 'status success';
+                statusEl.textContent = `查询成功！空投合约当前Token余额：${balanceInteger} 个（精确值：${balanceReadable}）`;
+            } catch (error) {
+                // 简化错误提示
+                let errorMsg = error.message;
+                if (errorMsg.length > 100) {
+                    errorMsg = errorMsg.substring(0, 100) + '...';
+                }
+                
+                statusEl.className = 'status error';
+                statusEl.textContent = `查询失败: ${errorMsg}`;
+                console.error('查询余额错误:', error);
+            }
+        }
+
+        // ========== 功能3：执行批量随机空投（修改为三参数） ==========
+        async function executeBatchRandomAirdrop() {
+            if (!provider || !signer) return alert('请先连接钱包！');
+            
+            // 获取输入参数（三参数：下限、上限、空投次数）
+            const airdropContractAddr = document.getElementById('airdropContractAddr').value;
+            const minAmount = document.getElementById('airdropMinAmount').value;
+            const maxAmount = document.getElementById('airdropMaxAmount').value;
+            const airdropCount = document.getElementById('airdropCount').value;
+            const statusEl = document.getElementById('batchAirdropStatusMsg');
+
+            // ========== 前置参数校验（新增三参数逻辑） ==========
+            try {
+                if (!ethers.utils.isAddress(airdropContractAddr)) throw new Error('空投合约地址无效');
+                if (!minAmount || minAmount < 1) throw new Error('金额下限必须大于0（如1对应1.00000）');
+                if (!maxAmount || maxAmount < 1) throw new Error('金额上限必须大于0（如10对应10.00000）');
+                if (!airdropCount || airdropCount < 1) throw new Error('空投次数必须大于0');
+                if (Number(maxAmount) < Number(minAmount)) throw new Error('金额上限不能小于金额下限');
+            } catch (error) {
+                statusEl.className = 'status error';
+                statusEl.textContent = `参数错误: ${error.message}`;
+                return;
+            }
+
+            // 初始化合约实例
+            const airdropContract = new ethers.Contract(airdropContractAddr, airdropContractABI, signer);
+            const tokenContractAddr = document.getElementById('tokenContractAddr').value;
+            const tokenContract = new ethers.Contract(tokenContractAddr, erc20TokenABI, provider);
+
+            try {
+                // 1. 先校验空投合约余额是否足够（基于金额下限）
+                statusEl.className = 'status loading';
+                statusEl.textContent = '正在校验空投合约Token余额...';
+                
+                // 获取合约余额（wei单位）和Token小数位
+                const balanceWei = await airdropContract.getContractTokenBalance();
+                const decimals = await tokenContract.decimals();
+                
+                // 计算最小总需求金额（空投次数 × 金额下限）
+                const minTotalAmount = Number(airdropCount) * Number(minAmount);
+                const minTotalAmountWei = ethers.utils.parseUnits(minTotalAmount.toString(), decimals);
+                
+                if (balanceWei.lt(minTotalAmountWei)) {
+                    throw new Error(`空投合约余额不足（当前余额不足以支撑 ${airdropCount} 次空投，每次最小 ${minAmount}.00000 个Token）`);
+                }
+
+                // 2. 执行批量空投交易（传入三参数，用BigNumber包装防止溢出）
+                statusEl.textContent = '空投交易处理中，请等待钱包确认并上链...';
+                const tx = await airdropContract.executeBatchRandomAirdrop(
+                    ethers.BigNumber.from(minAmount),
+                    ethers.BigNumber.from(maxAmount),
+                    ethers.BigNumber.from(airdropCount)
+                );
+                
+                // 3. 等待交易上链
+                await tx.wait();
+                
+                // 4. 更新成功状态
+                statusEl.className = 'status success';
+                statusEl.textContent = `空投成功！交易哈希: ${tx.hash.substring(0, 10)}...${tx.hash.substring(tx.hash.length - 6)}，共生成 ${airdropCount} 个随机地址，金额范围 ${minAmount}.00000 ~ ${maxAmount}.00000`;
+                
+                // 5. 空投成功后自动查询最新余额
+                setTimeout(() => readAirdropContractTokenBalance(), 1500);
+            } catch (error) {
+                // 简化错误提示
+                let errorMsg = error.message;
+                if (errorMsg.includes('user rejected')) {
+                    errorMsg = '执行失败：你已拒绝钱包交易请求';
+                } else if (errorMsg.includes('Insufficient token balance')) {
+                    errorMsg = '执行失败：空投合约Token余额不足';
+                } else if (errorMsg.length > 150) {
+                    errorMsg = errorMsg.substring(0, 150) + '...';
+                }
+                
+                statusEl.className = 'status error';
+                statusEl.textContent = `空投失败: ${errorMsg}`;
+                console.error('执行空投错误:', error);
+            }
+        }
+
+        // 页面初始化：默认展开所有面板
+        window.onload = function() {
+            document.querySelectorAll('.collapse-content').forEach(el => {
+                el.style.display = 'block';
+            });
+            document.querySelectorAll('.collapse-btn').forEach(btn => {
+                btn.textContent = '收起 ▲';
+            });
+        };
+    </script>
+</body>
 </html>
